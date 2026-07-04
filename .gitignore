@@ -5,3 +5,11 @@ backend/data/*.db-wal
 backend/data/*.db-shm
 .env
 *.log
+
+# Local-only Windows dev artifacts (see PRIMER "Local dev on Windows"):
+# local-test.js serves public/ + real proxy.js and forwards sqlite routes
+# to the live server. package-lock.json is a byproduct of local npm install;
+# the Docker build only copies package.json and runs npm install, so a
+# committed lockfile would be unused noise.
+backend/local-test.js
+backend/package-lock.json
