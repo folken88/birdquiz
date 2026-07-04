@@ -59,6 +59,15 @@ not just curl checks:
   Distractor names still come from the full pool — names need no media.
 - Bird clips route through `Narrator.playClip()` — sacred `S` stops them,
   20s length cap, ended/error/blocked-autoplay all resolve (no hangs).
+- **Question mix is weighted toward sound** (`DEFAULT_MODES` in quiz.js =
+  `['sound','sound','fieldmark','sound','sound','habitat']`) — ~2 of every 3
+  questions play a bird call; field-mark/habitat trivia are the occasional
+  change of pace. (Tobias's call, 2026-07-04.)
+- **Narrator stops the option-reading the instant you pick** (`presentChoices`
+  calls `stopAll()` on select), and all speech cancels go through
+  `cancelSpeech()` which sets a 150ms guard so `pump()` never fires the
+  Chrome/Safari cancel-then-speak "gabble the first words" bug. Result lines
+  use full stops (not em-dashes) for a clean spoken pause.
 - Session-complete screen is a numbered choice ("1. Play again") now.
 - SpeechSynthesis narrator: earcons, adjustable rate (`[`/`]`) and volume
   (`-`/`=`), one sacred global stop key (`S` — never rebind it to a feature).
@@ -92,7 +101,9 @@ not just curl checks:
 2. No buzz-in-early: during a sound clip the digit keys aren't live yet
    (choices bind after the clip finishes) — a player who knows the call
    immediately still has to wait out the clip (max 20s). Voice answers (V)
-   will partly address this since `V` is live during the clip.
+   will partly address this since `V` is live during the clip. NOTE: with
+   the sound-weighted mix, ~2 of 3 questions are clips, so this wait is now
+   felt more often — worth prioritizing buzz-in when voice answers land.
 3. eBird taxonomy endpoint occasionally drops a code or two from a batch
    (fed 5, got 4 — `mourdo` missing); pool just comes back slightly smaller.
    Not blocking; look if a region ever comes up short.
