@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  --bg: #10161a;
+  --panel: #1a2229;
+  --text: #eef2f4;
+  --muted: #9fb0b8;
+  --accent: #4fb0a6;
+  --danger: #e0705a;
+  --focus: #ffd166;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+#app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+h1 {
+  font-size: 1.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 0;
+}
+
+label {
+  display: block;
+  margin: 1rem 0 0.35rem;
+  color: var(--muted);
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  border: 1px solid #33424a;
+  background: var(--panel);
+  color: var(--text);
+}
+
+input[type="text"]:focus, .choice-btn:focus {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.choice-btn {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  font-size: 1.05rem;
+  border-radius: 10px;
+  border: 1px solid #33424a;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.choice-btn:hover {
+  border-color: var(--accent);
+}
+
+.hidden { display: none !important; }
+
+#quiz-status {
+  margin-top: 1.5rem;
+  color: var(--muted);
+}
+
+.token-grid .choice-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
