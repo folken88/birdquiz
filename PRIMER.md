@@ -38,39 +38,73 @@ challenging enough for real birders, welcoming enough for total beginners.
   credential workaround). Nothing birdquiz-specific there; it's the same
   TrueNAS box, same access pattern.
 
-## Current state (as of 2026-07-04)
+## Current state (as of 2026-07-04, evening)
 
-**Live and working**, verified via direct API calls through
-`https://bird.folkengames.com` post-cutover:
+**Live and working**, now verified by full automated browser playthroughs
+(login → region → 10 questions → session complete → mastery persisted),
+not just curl checks:
 - Casual name+token login (no password), progress resumes by name.
-- Weighted "due for review" mastery tracking per player per species.
-- Three quiz modes mixed per session: sound-ID (xeno-canto), spoken
-  field-mark trivia, habitat/range trivia — answered by number key, no typing.
+- Weighted "due for review" mastery tracking per player per species —
+  verified live: correct answer dropped due_score to 0.45, misses sat at 2.3.
+- Three quiz modes mixed per session, answered by number key, no typing.
+- **Real bird sounds work with zero API keys**: `/api/birds/recording`
+  falls back to iNaturalist's keyless public API (research-grade,
+  openly-licensed sounds, played from `static.inaturalist.org` directly).
+  xeno-canto v3 is still preferred when `XC_API_KEY` is set (v2 keyless API
+  is dead — 404; v3 without key — 401).
+- **Media eligibility gate (Tobias's rule)**: a bird may only be a quiz
+  question if it has ≥1 verified recording AND ≥1 picture. Enforced via
+  `POST /api/birds/media-check` (batch endpoint that also returns the media
+  so the quiz plays what was verified). All 18 demo species pass.
+  Distractor names still come from the full pool — names need no media.
+- Bird clips route through `Narrator.playClip()` — sacred `S` stops them,
+  20s length cap, ended/error/blocked-autoplay all resolve (no hangs).
+- Session-complete screen is a numbered choice ("1. Play again") now.
 - SpeechSynthesis narrator: earcons, adjustable rate (`[`/`]`) and volume
   (`-`/`=`), one sacred global stop key (`S` — never rebind it to a feature).
 - 16 placeholder animal tokens (not bird-specific yet) staged and serving.
-- Running with **no eBird/xeno-canto API keys configured** — everything is
-  currently served from a hand-written 18-species demo pool
-  (`backend/src/demoSpecies.js`), same demo-mode spirit the old app had.
+- Still **no eBird key** → species list always falls back to the 18-species
+  demo pool (`backend/src/demoSpecies.js`) regardless of region entered.
 
-**Not yet done** (see `birdquiz-app.md` memory for the full list):
-1. No real browser/screen-reader session has exercised this yet — only
-   curl-level API verification and a live cutover health check. **Do this
-   first if picking the project back up** — open bird.folkengames.com and
-   actually play a round.
-2. eBird / xeno-canto API keys not configured (both free) — until they are,
-   the game only ever uses the 18-species demo pool regardless of region
-   entered.
-3. Field-mark/habitat trivia for real (non-demo) species falls back to a
+**Known bugs / not yet done:**
+1. **Token picker keyboard gap**: `presentChoices` only accepts digits 1–9
+   (0 = 10th item) but the token picker lists 16 tokens — tokens 11–16 are
+   unreachable by keyboard (mouse/screen-reader Tab only). Needs a design
+   call (pagination? two-digit entry?) before fixing.
+2. No buzz-in-early: during a sound clip the digit keys aren't live yet
+   (choices bind after the clip finishes) — a player who knows the call
+   immediately still has to wait out the clip (max 20s).
+3. eBird key still not configured (free) — region picking is cosmetic until
+   then. An XC key would also upgrade sound quality/typing (song vs call).
+4. Field-mark/habitat trivia for real (non-demo) species falls back to a
    raw Wikipedia summary sentence — untested at scale, likely needs curation.
-4. No on-screen settings UI for rate/volume/photo-mode — keyboard-only,
+5. No on-screen settings UI for rate/volume/photo-mode — keyboard-only,
    undocumented in the app itself.
-5. Real per-bird-species token art doesn't exist yet — swap is a one-column
+6. Real per-bird-species token art doesn't exist yet — swap is a one-column
    `image_path` update in the `tokens` table (see `backend/src/db.js`), no
    schema change needed when art shows up.
-6. Not yet added to the nightly Google Drive backup routine — low priority
-   while all data is placeholder/test data, but real per-player mastery data
-   should get backed up once it has value worth protecting.
+7. Not yet added to the nightly Google Drive backup routine — low priority
+   while all data is placeholder/test data.
+
+**Local dev on Windows (this box):** `better-sqlite3` cannot build here
+(no VS C++ toolset, no Node 24 prebuilt) so the full backend won't run
+locally. `backend/local-test.js` (untracked, do not commit) serves
+`public/` + the real `proxy.js` locally on :8081 and forwards the
+sqlite-backed routes to the live server — good enough to playtest any
+frontend or proxy change before deploying.
+
+**Deploy gotcha #2 (hit 2026-07-04):** after `docker compose build backend
+&& up -d --force-recreate backend`, the backend crash-looped with
+`SQLITE_READONLY` — the db files in `backend/data/` were host-owned
+(tobias, mode 644) and the rebuilt image's `node` user couldn't write them.
+Fix: `chmod 0666 backend/data/birdquiz.db*` on the host, restart container.
+Check `docker logs birdquiz-backend` after every recreate.
+
+**Upstream API etiquette (learned the hard way):** Wikipedia's api.php
+rate-limits per-title thumbnail calls brutally (429 + Retry-After ~54s
+after ~10 rapid calls). Always use the batched form (up to 50 titles per
+request) — `imagesForNames()` in `proxy.js` does this; don't regress it
+to per-species calls.
 
 ## Architecture map (start here when reading code)
 
@@ -80,8 +114,10 @@ backend/
   src/db.js          — better-sqlite3: tokens/players/mastery schema +
                         session-pick weighting logic (read this to
                         understand the spaced-repetition-lite scoring)
-  src/proxy.js        — eBird/xeno-canto/Wikipedia/Nominatim proxy routes,
-                        ported from the old app + new /api/birds/facts
+  src/proxy.js        — eBird/xeno-canto+iNaturalist/Wikipedia/Nominatim
+                        proxy routes + /api/birds/facts + the batch
+                        /api/birds/media-check eligibility endpoint
+  local-test.js       — untracked Windows dev harness (see "Local dev")
   src/demoSpecies.js  — the 18-species fallback pool w/ hand-written facts
 public/
   index.html
