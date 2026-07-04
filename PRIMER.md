@@ -63,8 +63,13 @@ not just curl checks:
 - SpeechSynthesis narrator: earcons, adjustable rate (`[`/`]`) and volume
   (`-`/`=`), one sacred global stop key (`S` — never rebind it to a feature).
 - 16 placeholder animal tokens (not bird-specific yet) staged and serving.
-- Still **no eBird key** → species list always falls back to the 18-species
-  demo pool (`backend/src/demoSpecies.js`) regardless of region entered.
+- **eBird key IS configured now** (2026-07-04) → region picker returns real
+  live species lists (496 for Indiana, 600 for Scotland, etc.). Demo pool is
+  now only the no-key / eBird-down fallback. Live species are sampled
+  randomly (not taxonomic-front, which was all waterfowl) and filtered to
+  `category === 'species'` (no hybrids/spuh/slash/domestics). Verified live
+  end-to-end with iNaturalist sound. **xeno-canto key still pending** — once
+  set, it upgrades sound quality/typing (song vs call).
 
 **Known bugs / not yet done:**
 1. **Token picker keyboard gap**: `presentChoices` only accepts digits 1–9
