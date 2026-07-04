@@ -28,9 +28,13 @@ async function resolveSpeciesPool(regionCode) {
     const codes = shuffle(await Api.species(regionCode));
     const codeStr = codes.slice(0, 200).join(',');
     const taxa = await Api.taxonomy(codeStr);
+    // eBird region lists include hybrids ("Sandhill x Common Crane"),
+    // genus-level "sp." entries, slashes, and domestics — junk for a
+    // learn-the-name quiz. Keep only true species (category 'species').
+    const species = taxa.filter(t => t.category === 'species');
     return {
       live: true,
-      list: shuffle(taxa.map(t => ({ code: t.speciesCode, commonName: t.comName, sciName: t.sciName }))),
+      list: shuffle(species.map(t => ({ code: t.speciesCode, commonName: t.comName, sciName: t.sciName }))),
     };
   } catch (err) {
     if (err.status === 503) {
