@@ -171,9 +171,11 @@ export async function initQuiz(container, player) {
 
     Api.answer(player.name, sp.code, sp.commonName, pickedCorrect).catch(() => {});
 
+    // Full stops (not em-dashes) so the synthesizer takes a clear breath
+    // between the verdict and the name instead of running them together.
     const resultLine = pickedCorrect
-      ? `Correct — ${sp.commonName}.`
-      : `Not quite — that was a ${sp.commonName}.`;
+      ? `Correct. That was a ${sp.commonName}.`
+      : `Not quite. That was a ${sp.commonName}.`;
     i++;
     Narrator.speak(resultLine, { priority: 'event', onEnd: runQuestion });
   }

@@ -36,8 +36,21 @@ function getAudioCtx() {
   return audioCtx;
 }
 
+// Chrome (and Safari) have a long-standing bug: calling speechSynthesis
+// .cancel() and then .speak() in the same tick makes the new utterance race
+// through — often gabbling its first few words. So all cancels go through
+// cancelSpeech(), which stamps a short guard window, and pump() waits out
+// that window before starting the next utterance.
+let resumeAt = 0;
+function cancelSpeech() {
+  speechSynthesis.cancel();
+  resumeAt = performance.now() + 150;
+}
+
 function pump() {
   if (speaking || !queue.length) return;
+  const wait = resumeAt - performance.now();
+  if (wait > 0) { setTimeout(pump, wait); return; } // don't rush a post-cancel utterance
   const { text, onEnd } = queue.shift();
   const utter = new SpeechSynthesisUtterance(text);
   utter.rate = prefs.rate;
@@ -55,7 +68,7 @@ function speak(text, { priority = 'event', onEnd } = {}) {
   if (!text) return;
   if (priority === 'urgent') {
     queue = [];
-    speechSynthesis.cancel();
+    cancelSpeech();
     speaking = false;
     queue.push({ text, onEnd });
     pump();
@@ -68,7 +81,7 @@ function speak(text, { priority = 'event', onEnd } = {}) {
 
 function stopAll() {
   queue = [];
-  speechSynthesis.cancel();
+  cancelSpeech();
   speaking = false;
   stopClip();
 }
@@ -228,6 +241,10 @@ function presentChoices(container, items, labelFn, { prompt = '', escapeCancels 
     document.addEventListener('keydown', handler);
     function finish(idx) {
       document.removeEventListener('keydown', handler);
+      // Silence the option-reading the moment a choice is made — the player
+      // has decided, so don't keep listing the rest. (Whatever the caller
+      // speaks next goes through the post-cancel guard, so it won't rush.)
+      stopAll();
       resolve(idx);
     }
 
