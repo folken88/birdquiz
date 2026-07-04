@@ -70,6 +70,34 @@ function stopAll() {
   queue = [];
   speechSynthesis.cancel();
   speaking = false;
+  stopClip();
+}
+
+// Non-speech audio (bird recordings) also routes through the narrator so
+// the sacred stop key silences it like everything else. One clip at a time;
+// capped so a minutes-long field recording can't stall a question.
+let currentClip = null;
+function playClip(url, { maxSeconds = 20 } = {}) {
+  return new Promise(resolve => {
+    stopClip();
+    const audio = new Audio(url);
+    audio.volume = prefs.volume;
+    let timer = null;
+    const done = () => {
+      if (timer) clearTimeout(timer);
+      audio.pause();
+      if (currentClip === audio) currentClip = null;
+      resolve();
+    };
+    audio.__stop = done;
+    currentClip = audio;
+    audio.addEventListener('ended', done, { once: true });
+    audio.addEventListener('error', done, { once: true });
+    audio.play().then(() => { timer = setTimeout(done, maxSeconds * 1000); }).catch(done);
+  });
+}
+function stopClip() {
+  currentClip?.__stop?.();
 }
 
 // Short WebAudio earcons — a tone, not more speech to sit through.
@@ -168,7 +196,7 @@ function presentChoices(container, items, labelFn, { prompt = '', escapeCancels 
 }
 
 export const Narrator = {
-  speak, stopAll, earcon, setRate, nudgeRate, setVolume, nudgeVolume,
+  speak, stopAll, earcon, playClip, setRate, nudgeRate, setVolume, nudgeVolume,
   bindGlobalKeys, presentChoices,
   get rate() { return prefs.rate; },
   get volume() { return prefs.volume; },

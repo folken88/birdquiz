@@ -126,44 +126,183 @@ router.get('/birds/taxonomy', async (req, res) => {
   }
 });
 
+// Recording lookup: xeno-canto v3 when a key is configured (better-curated,
+// song/call typed), falling back to iNaturalist's keyless public API
+// (research-grade observations with openly licensed sounds) so demo mode
+// still gets real bird audio with zero keys configured.
+async function findXCRecording(sciName, comName) {
+  if (!XC_KEY) return null;
+  const xcBase = 'https://xeno-canto.org/api/3/recordings';
+  let queries = [];
+  if (sciName) {
+    const parts = sciName.split(' ');
+    if (parts.length >= 2) {
+      queries.push(`gen:"${parts[0]}" sp:"${parts[1]}" q:A type:song`);
+      queries.push(`gen:"${parts[0]}" sp:"${parts[1]}" q:A`);
+    }
+  }
+  if (comName) queries.push(`en:"${comName}" q:A`);
+  for (const q of queries) {
+    const url = `${xcBase}?query=${encodeURIComponent(q)}&key=${XC_KEY}&per_page=10`;
+    const data = await fetchJSON(url).catch(() => null);
+    if (!data?.recordings?.length) continue;
+    const pool = data.recordings.slice(0, Math.min(5, data.recordings.length));
+    const r = pool[Math.floor(Math.random() * pool.length)];
+    return {
+      id: r.id, fileUrl: `/api/birds/audio/${r.id}`, type: r.type, quality: r.q,
+      location: [r.loc, r.cnt].filter(Boolean).join(', '), recorder: r.rec, license: r.lic,
+      xcUrl: `https://xeno-canto.org/${r.id}`,
+    };
+  }
+  return null;
+}
+
+async function findINatRecording(sciName, comName) {
+  const name = sciName || comName;
+  if (!name) return null;
+  const url = 'https://api.inaturalist.org/v1/observations?' + new URLSearchParams({
+    taxon_name: name, sounds: 'true', quality_grade: 'research', per_page: '10',
+  });
+  const data = await fetchJSON(url).catch(() => null);
+  if (!data?.results?.length) return null;
+  // Only openly licensed sounds (license_code unset = all rights reserved).
+  const sounds = data.results.flatMap(obs =>
+    (obs.sounds || [])
+      .filter(s => s.license_code && s.file_url)
+      .map(s => ({ sound: s, obs }))
+  );
+  if (!sounds.length) return null;
+  const { sound, obs } = sounds[Math.floor(Math.random() * Math.min(5, sounds.length))];
+  return {
+    id: `inat-${sound.id}`, fileUrl: sound.file_url, type: 'recording', quality: obs.quality_grade,
+    location: obs.place_guess || '', recorder: obs.user?.login || '', license: sound.license_code,
+    xcUrl: obs.uri || `https://www.inaturalist.org/observations/${obs.id}`,
+  };
+}
+
+function findRecording(sciName, comName) {
+  const cacheKey = `rec:${(sciName || comName).toLowerCase()}`;
+  return cached(cacheKey, TTL.recording, async () =>
+    (await findXCRecording(sciName, comName)) || (await findINatRecording(sciName, comName))
+  );
+}
+
+function findImage(name) {
+  const key = `wiki:${name.toLowerCase()}`;
+  return cached(key, TTL.image, async () => {
+    for (const variant of [name, name.toLowerCase()]) {
+      const url = `https://en.wikipedia.org/w/api.php?` + new URLSearchParams({
+        action: 'query', titles: variant, prop: 'pageimages', format: 'json',
+        pithumbsize: '700', piprop: 'thumbnail', redirects: '1',
+      });
+      const data = await fetchJSON(url);
+      const page = Object.values(data.query?.pages || {})[0];
+      if (page?.thumbnail?.source) return { url: page.thumbnail.source, width: page.thumbnail.width, title: page.title };
+    }
+    return null;
+  });
+}
+
+// Batched Wikipedia thumbnail lookup — api.php takes up to 50 titles per
+// request, and single requests get rate-limited hard (429 with a ~1 minute
+// Retry-After) when fired per-species. Returns Map of lowercased input
+// name → image object (or null), and seeds the per-name cache.
+async function imagesForNames(names) {
+  const result = new Map();
+  const missing = [];
+  for (const name of names) {
+    const entry = cache.get(`wiki:${name.toLowerCase()}`);
+    if (entry && Date.now() - entry.ts < TTL.image) result.set(name.toLowerCase(), entry.data);
+    else missing.push(name);
+  }
+  for (let i = 0; i < missing.length; i += 50) {
+    const chunk = missing.slice(i, i + 50);
+    const url = `https://en.wikipedia.org/w/api.php?` + new URLSearchParams({
+      action: 'query', titles: chunk.join('|'), prop: 'pageimages', format: 'json',
+      pithumbsize: '700', piprop: 'thumbnail', redirects: '1',
+    });
+    const data = await fetchJSON(url);
+    // Walk title renames backwards (normalization, then redirects) so each
+    // returned page maps to the name the caller asked about.
+    const rename = new Map();
+    for (const n of data.query?.normalized || []) rename.set(n.to, n.from);
+    for (const r of data.query?.redirects || []) {
+      rename.set(r.to, rename.get(r.from) ?? r.from);
+    }
+    const byInput = new Map();
+    for (const page of Object.values(data.query?.pages || {})) {
+      const orig = rename.get(page.title) ?? page.title;
+      if (page.thumbnail?.source) {
+        byInput.set(orig.toLowerCase(), { url: page.thumbnail.source, width: page.thumbnail.width, title: page.title });
+      }
+    }
+    for (const name of chunk) {
+      const img = byInput.get(name.toLowerCase()) ?? null;
+      cache.set(`wiki:${name.toLowerCase()}`, { data: img, ts: Date.now() });
+      result.set(name.toLowerCase(), img);
+    }
+  }
+  return result;
+}
+
 router.get('/birds/recording', async (req, res) => {
   const sciName = (req.query.sciName || '').trim();
   const comName = (req.query.comName || '').trim();
   if (!sciName && !comName) return res.status(400).json({ error: 'sciName or comName required' });
-  if (!XC_KEY) return res.status(503).json({ error: 'no_xc_key', message: 'Audio requires a free xeno-canto API key.' });
   try {
-    const cacheKey = `xc3:${(sciName || comName).toLowerCase()}`;
-    const rec = await cached(cacheKey, TTL.recording, async () => {
-      const xcBase = 'https://xeno-canto.org/api/3/recordings';
-      let queries = [];
-      if (sciName) {
-        const parts = sciName.split(' ');
-        if (parts.length >= 2) {
-          queries.push(`gen:"${parts[0]}" sp:"${parts[1]}" q:A type:song`);
-          queries.push(`gen:"${parts[0]}" sp:"${parts[1]}" q:A`);
-        }
-      }
-      if (comName) queries.push(`en:"${comName}" q:A`);
-      for (const q of queries) {
-        const url = `${xcBase}?query=${encodeURIComponent(q)}&key=${XC_KEY}&per_page=10`;
-        const data = await fetchJSON(url).catch(() => null);
-        if (!data?.recordings?.length) continue;
-        const pool = data.recordings.slice(0, Math.min(5, data.recordings.length));
-        const r = pool[Math.floor(Math.random() * pool.length)];
-        return {
-          id: r.id, fileUrl: `/api/birds/audio/${r.id}`, type: r.type, quality: r.q,
-          location: [r.loc, r.cnt].filter(Boolean).join(', '), recorder: r.rec, license: r.lic,
-          xcUrl: `https://xeno-canto.org/${r.id}`,
-        };
-      }
-      return null;
-    });
+    const rec = await findRecording(sciName, comName);
     if (!rec) return res.status(404).json({ error: 'no recording found' });
     res.json(rec);
   } catch (err) {
-    console.error('xeno-canto error:', err.message);
+    console.error('Recording error:', err.message);
     res.status(500).json({ error: 'Recording fetch failed', message: err.message });
   }
+});
+
+// ── Batch media eligibility: a species may only appear as a quiz question
+// if it has at least one recording AND at least one picture. Returns the
+// media alongside the verdict so the frontend never has to re-fetch it.
+router.post('/birds/media-check', async (req, res) => {
+  const species = Array.isArray(req.body?.species) ? req.body.species.slice(0, 60) : null;
+  if (!species?.length) return res.status(400).json({ error: 'species array required' });
+  // Retry on thrown errors (rate limits, network blips) — only a clean
+  // null means "this bird really has no media". A transient upstream
+  // failure must not silently disqualify a bird.
+  const withRetry = async (fn) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { return await fn(); } catch {
+        await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+    return null;
+  };
+
+  // All images in one batched Wikipedia call; recordings individually
+  // through a small worker pool (iNaturalist/xeno-canto have no batch API).
+  const names = species.map(sp => (sp.commonName || '').trim()).filter(Boolean);
+  const imageMap = (await withRetry(() => imagesForNames(names))) || new Map();
+
+  const CONCURRENCY = 4;
+  const results = new Array(species.length);
+  let next = 0;
+  async function worker() {
+    while (next < species.length) {
+      const i = next++;
+      const sp = species[i];
+      const commonName = (sp.commonName || '').trim();
+      const sciName = (sp.sciName || '').trim();
+      const recording = await withRetry(() => findRecording(sciName, commonName));
+      const image = imageMap.get(commonName.toLowerCase()) || null;
+      results[i] = {
+        code: sp.code, commonName, sciName,
+        eligible: Boolean(recording && image),
+        recording: recording || null,
+        image,
+      };
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  res.json({ species: results });
 });
 
 router.get('/birds/audio/:id', async (req, res) => {
@@ -203,19 +342,7 @@ router.get('/birds/image', async (req, res) => {
   const name = (req.query.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required' });
   try {
-    const key = `wiki:${name.toLowerCase()}`;
-    const img = await cached(key, TTL.image, async () => {
-      for (const variant of [name, name.toLowerCase()]) {
-        const url = `https://en.wikipedia.org/w/api.php?` + new URLSearchParams({
-          action: 'query', titles: variant, prop: 'pageimages', format: 'json',
-          pithumbsize: '700', piprop: 'thumbnail', redirects: '1',
-        });
-        const data = await fetchJSON(url);
-        const page = Object.values(data.query?.pages || {})[0];
-        if (page?.thumbnail?.source) return { url: page.thumbnail.source, width: page.thumbnail.width, title: page.title };
-      }
-      return null;
-    });
+    const img = await findImage(name);
     if (!img) return res.status(404).json({ error: 'no image found' });
     res.json(img);
   } catch (err) {

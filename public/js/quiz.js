@@ -103,7 +103,26 @@ export async function initQuiz(container, player) {
     Narrator.speak('No live eBird key is configured yet, so we are playing with a demo set of common backyard birds.', { priority: 'event' });
   }
 
-  const { session } = await Api.session(player.name, pool.list, SESSION_LENGTH, DEFAULT_MODES);
+  // A bird only qualifies as a quiz question if we verified it has at least
+  // one recording AND at least one picture. The media-check returns the
+  // media itself, so sound questions play what was already verified.
+  // (Capped at 60 species per check — enough for a session; the full pool
+  // still supplies distractor names, which need no media.)
+  statusEl.textContent = 'Checking which birds have sounds and pictures…';
+  Narrator.speak('Checking which birds have sounds and pictures.', { priority: 'event' });
+  const { species: checked } = await Api.mediaCheck(
+    pool.list.slice(0, 60).map(sp => ({ code: sp.code, commonName: sp.commonName, sciName: sp.sciName }))
+  );
+  const mediaByCode = new Map(checked.map(c => [c.code, c]));
+  const eligible = pool.list.filter(sp => mediaByCode.get(sp.code)?.eligible);
+
+  if (!eligible.length) {
+    statusEl.textContent = 'No birds with both sound and picture data are available right now.';
+    Narrator.speak('Sorry — no birds with both sound and picture data are available right now. Please try again later.', { priority: 'urgent' });
+    return offerPlayAgain();
+  }
+
+  const { session } = await Api.session(player.name, eligible, SESSION_LENGTH, DEFAULT_MODES);
 
   let score = 0;
   let i = 0;
@@ -118,14 +137,14 @@ export async function initQuiz(container, player) {
     Narrator.earcon('mode');
 
     if (q.mode === 'sound') {
-      const rec = await Api.recording(sp.sciName, sp.commonName).catch(() => null);
+      const rec = mediaByCode.get(sp.code)?.recording
+        || await Api.recording(sp.sciName, sp.commonName).catch(() => null);
       if (rec) {
         statusEl.dataset.mode = 'sound';
-        const audio = new Audio(rec.fileUrl);
-        Narrator.speak('Listen to this call, then pick the species.', {
-          priority: 'urgent', onEnd: () => audio.play().catch(() => {}),
-        });
-        await new Promise(r => audio.addEventListener('ended', r, { once: true }));
+        await new Promise(r => Narrator.speak('Listen to this call, then pick the species.', { priority: 'urgent', onEnd: r }));
+        // playClip resolves on ended, error, blocked autoplay, the length
+        // cap, or the stop key — a sound question can never hang.
+        await Narrator.playClip(rec.fileUrl);
       } else {
         Narrator.speak('No recording is available for this one right now, so here is a clue instead.', { priority: 'urgent' });
         const fact = await factFor(sp, 'fieldmark');
@@ -157,12 +176,13 @@ export async function initQuiz(container, player) {
   function finishSession() {
     statusEl.textContent = `Session complete — ${score} of ${session.length} correct.`;
     Narrator.speak(`Session complete. You got ${score} out of ${session.length} correct.`, { priority: 'urgent' });
-    choicesEl.innerHTML = '';
-    const again = document.createElement('button');
-    again.type = 'button';
-    again.className = 'choice-btn';
-    again.textContent = 'Play again';
-    again.addEventListener('click', () => initQuiz(container, player));
-    choicesEl.appendChild(again);
+    return offerPlayAgain();
+  }
+
+  // Numbered choice like everything else — a bare click-only button would be
+  // invisible to the digit-key input idiom blind players rely on.
+  async function offerPlayAgain() {
+    await Narrator.presentChoices(choicesEl, ['Play again'], l => l);
+    initQuiz(container, player);
   }
 }

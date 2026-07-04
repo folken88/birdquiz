@@ -24,6 +24,7 @@ export const Api = {
   species: region => j(`/api/birds/species?region=${encodeURIComponent(region)}`),
   taxonomy: codes => j(`/api/birds/taxonomy?codes=${encodeURIComponent(codes)}`),
   recording: (sciName, comName) => j(`/api/birds/recording?sciName=${encodeURIComponent(sciName || '')}&comName=${encodeURIComponent(comName || '')}`),
+  mediaCheck: species => post('/api/birds/media-check', { species }),
   image: name => j(`/api/birds/image?name=${encodeURIComponent(name)}`),
   facts: name => j(`/api/birds/facts?name=${encodeURIComponent(name)}`),
 
