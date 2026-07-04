@@ -2,10 +2,13 @@ import { Narrator } from './narrator.js';
 import { Api } from './api.js';
 
 const SESSION_LENGTH = 10;
-// Photo-ID is coded but left out of the default mix — this app is
-// audio-first by design; a sighted/low-vision player can still get it via
-// a future "include photos" toggle without any code changes here.
-const DEFAULT_MODES = ['sound', 'fieldmark', 'habitat'];
+// Mode pattern the session builder cycles through by position. Weighted
+// toward sound (~2 of every 3 questions play a bird call) — this app is
+// audio-first, and hearing the calls is the point; field-mark and habitat
+// trivia are the occasional change of pace, not an equal third. Photo-ID is
+// coded but stays out of the default mix (a future "include photos" toggle
+// can add it with no changes here).
+const DEFAULT_MODES = ['sound', 'sound', 'fieldmark', 'sound', 'sound', 'habitat'];
 const CHOICE_COUNT = 5;
 
 function shuffle(arr) {
