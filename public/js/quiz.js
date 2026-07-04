@@ -19,12 +19,18 @@ function shuffle(arr) {
 
 async function resolveSpeciesPool(regionCode) {
   try {
-    const codes = await Api.species(regionCode);
+    // eBird returns the region list in taxonomic order (waterfowl first),
+    // so slicing the front every time makes every session ducks-and-geese.
+    // Shuffle the codes so the 200 we look up are a random spread of the
+    // region — AND shuffle again after taxonomy, which re-sorts its output
+    // back into taxonomic order (else the media-check's first-60 slice
+    // re-introduces the same bias within that 200).
+    const codes = shuffle(await Api.species(regionCode));
     const codeStr = codes.slice(0, 200).join(',');
     const taxa = await Api.taxonomy(codeStr);
     return {
       live: true,
-      list: taxa.map(t => ({ code: t.speciesCode, commonName: t.comName, sciName: t.sciName })),
+      list: shuffle(taxa.map(t => ({ code: t.speciesCode, commonName: t.comName, sciName: t.sciName }))),
     };
   } catch (err) {
     if (err.status === 503) {
