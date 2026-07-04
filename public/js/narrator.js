@@ -90,23 +90,43 @@ function stopAll() {
 // the sacred stop key silences it like everything else. One clip at a time;
 // capped so a minutes-long field recording can't stall a question.
 let currentClip = null;
-function playClip(url, { maxSeconds = 20 } = {}) {
+/**
+ * Play a clip and resolve when the caller should move on. Resolves on
+ * ended/error/blocked-autoplay/the maxSeconds cap/the stop key — and, if
+ * `duckAfter` is set, once the clip has played that long: at that point the
+ * clip's volume is lowered to `duckVolume` and it keeps playing underneath
+ * while the caller proceeds (e.g. reads the answer choices over it). The
+ * clip still stops on its natural end, the cap, or the next stopClip()
+ * (which a choice-pick triggers via stopAll). Without `duckAfter`, resolves
+ * only when the clip is fully done — a sound question can never hang.
+ */
+function playClip(url, { maxSeconds = 20, duckAfter = null, duckVolume = 0.3 } = {}) {
   return new Promise(resolve => {
     stopClip();
     const audio = new Audio(url);
     audio.volume = prefs.volume;
-    let timer = null;
+    let capTimer = null, duckTimer = null, resolved = false;
+    const proceed = () => { if (!resolved) { resolved = true; resolve(); } };
     const done = () => {
-      if (timer) clearTimeout(timer);
+      if (capTimer) clearTimeout(capTimer);
+      if (duckTimer) clearTimeout(duckTimer);
       audio.pause();
       if (currentClip === audio) currentClip = null;
-      resolve();
+      proceed();
     };
     audio.__stop = done;
     currentClip = audio;
     audio.addEventListener('ended', done, { once: true });
     audio.addEventListener('error', done, { once: true });
-    audio.play().then(() => { timer = setTimeout(done, maxSeconds * 1000); }).catch(done);
+    audio.play().then(() => {
+      capTimer = setTimeout(done, maxSeconds * 1000);
+      if (duckAfter != null) {
+        duckTimer = setTimeout(() => {
+          audio.volume = prefs.volume * duckVolume; // duck; keep playing underneath
+          proceed();
+        }, duckAfter * 1000);
+      }
+    }).catch(done);
   });
 }
 function stopClip() {

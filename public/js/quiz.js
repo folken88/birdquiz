@@ -150,9 +150,12 @@ export async function initQuiz(container, player) {
       if (rec) {
         statusEl.dataset.mode = 'sound';
         await new Promise(r => Narrator.speak('Listen to this call, then pick the species.', { priority: 'urgent', onEnd: r }));
-        // playClip resolves on ended, error, blocked autoplay, the length
-        // cap, or the stop key — a sound question can never hang.
-        await Narrator.playClip(rec.fileUrl);
+        // Short clips play in full before the choices appear. Clips longer
+        // than 10s get ducked at that point and keep playing underneath
+        // while the answer choices are read over the top, so the player
+        // isn't stuck waiting out a long recording. The clip stops when they
+        // answer (stopAll → stopClip) or at playClip's hard cap.
+        await Narrator.playClip(rec.fileUrl, { duckAfter: 10 });
       } else {
         Narrator.speak('No recording is available for this one right now, so here is a clue instead.', { priority: 'urgent' });
         const fact = await factFor(sp, 'fieldmark');
