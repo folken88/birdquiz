@@ -136,6 +136,9 @@ export async function initQuiz(container, player) {
     const q = session[i];
     const sp = pool.list.find(s => s.code === q.code) || q;
     statusEl.textContent = `Question ${i + 1} of ${session.length} — score ${score}`;
+    // Clear the prior screen's buttons so they don't linger while the clue
+    // or sound clip plays (answer choices render only after it finishes).
+    choicesEl.innerHTML = '';
     Narrator.earcon('mode');
 
     if (q.mode === 'sound') {
