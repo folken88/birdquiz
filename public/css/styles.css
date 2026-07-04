@@ -80,6 +80,11 @@ input[type="text"]:focus, .choice-btn:focus {
   border-color: var(--accent);
 }
 
+.choice-more {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .hidden { display: none !important; }
 
 #quiz-status {

@@ -73,38 +73,30 @@ export async function initQuiz(container, player) {
     <div class="screen quiz-screen">
       <h1>Bird Quiz</h1>
       <p class="subtitle">Playing as ${player.name}</p>
-      <div id="region-step">
-        <label for="region-input">Where are you birding? (city, state, or country)</label>
-        <input id="region-input" type="text" autocomplete="off" />
-      </div>
       <div id="quiz-choices"></div>
       <div id="quiz-status" role="status" aria-live="polite"></div>
     </div>
   `;
 
-  const regionInput = container.querySelector('#region-input');
   const choicesEl = container.querySelector('#quiz-choices');
   const statusEl = container.querySelector('#quiz-status');
 
   Narrator.speak(`Welcome back, ${player.name}. Where are you birding today?`, { priority: 'urgent' });
-  regionInput.focus();
 
-  const regionCode = await new Promise(resolve => {
-    regionInput.addEventListener('keydown', async e => {
-      if (e.key !== 'Enter' || !regionInput.value.trim()) return;
-      const matches = await Api.geoSearch(regionInput.value.trim()).catch(() => []);
-      if (!matches.length) {
-        Narrator.speak('No location matched. Try a different search, like a state or country name.', { priority: 'urgent' });
-        return;
-      }
-      const idx = await Narrator.presentChoices(
-        choicesEl, matches, m => m.displayName, { prompt: 'Pick your location.' }
-      );
-      resolve(matches[idx].regionCode);
-    });
-  });
+  // Region picking is a curated country → state/province drill-down (only
+  // regions we can query live from eBird), so the player can never land on
+  // an unsupported place. Same numbered-choice widget as everything else.
+  const regions = await Api.regions();
+  const countryIdx = await Narrator.presentChoices(
+    choicesEl, regions, r => r.country, { prompt: 'Choose your country.' }
+  );
+  const country = regions[countryIdx];
+  const subIdx = await Narrator.presentChoices(
+    choicesEl, country.subregions, s => s.name,
+    { prompt: `${country.country}. Choose your state or province.` }
+  );
+  const regionCode = country.subregions[subIdx].code;
 
-  document.querySelector('#region-step').classList.add('hidden');
   statusEl.textContent = 'Loading species for your region…';
   Narrator.speak('Loading species.', { priority: 'event' });
 

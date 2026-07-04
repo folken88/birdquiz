@@ -20,6 +20,7 @@ export const Api = {
   login: (name, tokenId) => post('/api/players/login', { name, tokenId }),
 
   demoSpecies: () => j('/api/demo-species'),
+  regions: () => j('/api/regions'),
   geoSearch: q => j(`/api/geo/search?q=${encodeURIComponent(q)}`),
   species: region => j(`/api/birds/species?region=${encodeURIComponent(region)}`),
   taxonomy: codes => j(`/api/birds/taxonomy?codes=${encodeURIComponent(codes)}`),

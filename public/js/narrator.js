@@ -147,42 +147,80 @@ function bindGlobalKeys() {
   });
 }
 
+const PAGE_SIZE = 9; // items per page when a list is long enough to paginate
+
 /**
  * Render a numbered choice list into `container` (real clickable buttons for
  * sighted/mouse use) AND speak it as a numbered list, resolving as soon as
- * either a button is clicked or the matching digit key (1-9, 0 for a 10th
- * item) is pressed. This is the one answer/selection pattern used
- * everywhere in the app — poker's lesson was that a single numbered-menu
- * idiom beats bespoke input widgets for blind play.
+ * either a button is clicked or the matching digit key is pressed. This is
+ * the one answer/selection pattern used everywhere in the app — poker's
+ * lesson was that a single numbered-menu idiom beats bespoke input widgets
+ * for blind play.
+ *
+ * Short lists (≤10 items): keys 1-9 pick, 0 picks a 10th item — unchanged.
+ * Long lists (>10 items): paginated at 9 per page; keys 1-9 pick within the
+ * page and 0 advances to the next page (wrapping), so every item stays
+ * reachable by keyboard (fixes the old "items 11+ unreachable" gap).
  *
  * `labelFn(item, index)` returns the spoken+visible label for each item.
- * Resolves with the picked index, or -1 if Escape is pressed and
- * `escapeCancels` is true.
+ * Resolves with the picked index into the ORIGINAL items array, or -1 if
+ * Escape is pressed and `escapeCancels` is true.
  */
 function presentChoices(container, items, labelFn, { prompt = '', escapeCancels = false } = {}) {
   return new Promise(resolve => {
-    container.innerHTML = '';
-    const list = document.createElement('div');
-    list.className = 'choice-list';
-    items.forEach((item, i) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'choice-btn';
-      btn.textContent = `${i + 1}. ${labelFn(item, i)}`;
-      btn.addEventListener('click', () => finish(i));
-      list.appendChild(btn);
-    });
-    container.appendChild(list);
+    const paginated = items.length > 10;
+    const pageCount = paginated ? Math.ceil(items.length / PAGE_SIZE) : 1;
+    let page = 0;
 
-    const lines = items.map((item, i) => `${i + 1}. ${labelFn(item, i)}`).join('. ');
-    speak(`${prompt} ${lines}`.trim(), { priority: 'urgent' });
+    function render() {
+      container.innerHTML = '';
+      const list = document.createElement('div');
+      list.className = 'choice-list';
+
+      const start = paginated ? page * PAGE_SIZE : 0;
+      const end = paginated ? Math.min(start + PAGE_SIZE, items.length) : items.length;
+      const pageLines = [];
+      for (let i = start; i < end; i++) {
+        const slot = paginated ? (i - start) + 1 : i + 1; // 1-based key on this page
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'choice-btn';
+        btn.textContent = `${slot}. ${labelFn(items[i], i)}`;
+        btn.addEventListener('click', () => finish(i));
+        list.appendChild(btn);
+        pageLines.push(`${slot}. ${labelFn(items[i], i)}`);
+      }
+
+      let moreBtn = null;
+      if (paginated) {
+        moreBtn = document.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.className = 'choice-btn choice-more';
+        moreBtn.textContent = '0. More';
+        moreBtn.addEventListener('click', nextPage);
+        list.appendChild(moreBtn);
+      }
+      container.appendChild(list);
+
+      const header = paginated ? `${prompt} Page ${page + 1} of ${pageCount}.` : prompt;
+      const tail = paginated ? ' 0. More.' : '';
+      speak(`${header} ${pageLines.join('. ')}${tail}`.trim(), { priority: 'urgent' });
+    }
+
+    function nextPage() {
+      page = (page + 1) % pageCount;
+      render();
+    }
 
     const handler = e => {
       if (e.key >= '1' && e.key <= '9') {
-        const idx = Number(e.key) - 1;
-        if (idx < items.length) finish(idx);
-      } else if (e.key === '0' && items.length >= 10) {
-        finish(9);
+        const slot = Number(e.key) - 1; // 0-based within current page
+        const idx = (paginated ? page * PAGE_SIZE : 0) + slot;
+        const pageEnd = paginated ? Math.min(page * PAGE_SIZE + PAGE_SIZE, items.length) : items.length;
+        if (idx < pageEnd) finish(idx);
+      } else if (e.key === '0') {
+        if (paginated) nextPage();
+        else if (items.length >= 10) finish(9);
       } else if (e.key === 'Escape' && escapeCancels) {
         finish(-1);
       }
@@ -192,6 +230,8 @@ function presentChoices(container, items, labelFn, { prompt = '', escapeCancels 
       document.removeEventListener('keydown', handler);
       resolve(idx);
     }
+
+    render();
   });
 }
 

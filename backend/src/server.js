@@ -4,6 +4,7 @@ import cors from 'cors';
 
 import proxyRouter from './proxy.js';
 import { DEMO_SPECIES } from './demoSpecies.js';
+import { REGIONS } from './regions.js';
 import {
   listTokens, listPlayers, loginPlayer,
   recordAnswer, getPlayerMasterySummary, pickSessionSpecies,
@@ -22,6 +23,9 @@ app.use('/api', proxyRouter);
 
 // Demo-mode fallback species pool (used when EBIRD_API_KEY isn't set).
 app.get('/api/demo-species', (_req, res) => res.json(DEMO_SPECIES));
+
+// Supported regions for the picker (country → state/province, eBird codes).
+app.get('/api/regions', (_req, res) => res.json(REGIONS));
 
 // ── Tokens & players (casual name+token login, no password) ─────────────
 app.get('/api/tokens', (_req, res) => res.json(listTokens()));
