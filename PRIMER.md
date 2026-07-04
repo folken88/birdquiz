@@ -59,6 +59,12 @@ not just curl checks:
   Distractor names still come from the full pool — names need no media.
 - Bird clips route through `Narrator.playClip()` — sacred `S` stops them,
   20s length cap, ended/error/blocked-autoplay all resolve (no hangs).
+- **Long clips duck instead of blocking:** a recording still playing after
+  10s is lowered to 30% volume and the answer choices are read over the top
+  of it (`playClip({ duckAfter: 10 })`), so the player never waits out a
+  long recording. It keeps playing underneath until they answer (stopClip)
+  or the 20s cap. Short clips (<10s) play in full first, as before. Works
+  even for streams with no duration metadata (ducks on a wall-clock timer).
 - **Question mix is weighted toward sound** (`DEFAULT_MODES` in quiz.js =
   `['sound','sound','fieldmark','sound','sound','habitat']`) — ~2 of every 3
   questions play a bird call; field-mark/habitat trivia are the occasional
