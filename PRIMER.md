@@ -63,31 +63,50 @@ not just curl checks:
 - SpeechSynthesis narrator: earcons, adjustable rate (`[`/`]`) and volume
   (`-`/`=`), one sacred global stop key (`S` — never rebind it to a feature).
 - 16 placeholder animal tokens (not bird-specific yet) staged and serving.
-- **eBird key IS configured now** (2026-07-04) → region picker returns real
-  live species lists (496 for Indiana, 600 for Scotland, etc.). Demo pool is
-  now only the no-key / eBird-down fallback. Live species are sampled
-  randomly (not taxonomic-front, which was all waterfowl) and filtered to
-  `category === 'species'` (no hybrids/spuh/slash/domestics). Verified live
-  end-to-end with iNaturalist sound. **xeno-canto key still pending** — once
-  set, it upgrades sound quality/typing (song vs call).
+- **Both API keys configured now** (2026-07-04, in server `.env`). eBird →
+  live regional species; xeno-canto → primary sound (song-typed, A-quality,
+  streamed via our `/api/birds/audio/` proxy), with iNaturalist as keyless
+  fallback. Live species are sampled randomly (not taxonomic-front, which
+  was all waterfowl) and filtered to `category === 'species'` (no
+  hybrids/spuh/slash/domestics).
+- **Region picker is a curated country → state/province drill-down**
+  (`backend/src/regions.js` + `GET /api/regions`): US/Canada/Australia/UK
+  only — the regions with eBird subnational codes we can query. Free-text
+  region entry is GONE (player can't land on an unsupported place). Two
+  numbered-choice prompts. `/api/geo/search` (Nominatim) still exists but is
+  unused by the region flow.
+- **`presentChoices` now paginates lists >10** (9/page, `0` = More, wrapping,
+  "page X of Y" announced) — needed for the 51-state US list, and it also
+  fixed the old token-picker gap where tokens 11–16 were keyboard-unreachable.
+  Lists ≤10 keep the classic 1–9/0 behavior untouched.
 
 **Known bugs / not yet done:**
-1. **Token picker keyboard gap**: `presentChoices` only accepts digits 1–9
-   (0 = 10th item) but the token picker lists 16 tokens — tokens 11–16 are
-   unreachable by keyboard (mouse/screen-reader Tab only). Needs a design
-   call (pagination? two-digit entry?) before fixing.
+1. **Voice answers (STT) — designed, not built.** Spec at
+   `docs/superpowers/specs/2026-07-04-voice-answers-design.md`: hold-`V`
+   push-to-talk, say the bird's name (whole/partial/garble-tolerant), closed-
+   set match against the choices, no-penalty mis-hears, no LLM. Tobias's
+   ruling: credit requires the actual name — "the red one" scores nothing.
+   **Open question before implementing:** fold in mobile fixes (Josh may be
+   on a phone) — on-screen Stop + hold-to-Talk buttons, iOS audio-unlock,
+   render spoken clue as text. Recommendation was to fold them in.
 2. No buzz-in-early: during a sound clip the digit keys aren't live yet
    (choices bind after the clip finishes) — a player who knows the call
-   immediately still has to wait out the clip (max 20s).
-3. eBird key still not configured (free) — region picking is cosmetic until
-   then. An XC key would also upgrade sound quality/typing (song vs call).
+   immediately still has to wait out the clip (max 20s). Voice answers (V)
+   will partly address this since `V` is live during the clip.
+3. eBird taxonomy endpoint occasionally drops a code or two from a batch
+   (fed 5, got 4 — `mourdo` missing); pool just comes back slightly smaller.
+   Not blocking; look if a region ever comes up short.
 4. Field-mark/habitat trivia for real (non-demo) species falls back to a
    raw Wikipedia summary sentence — untested at scale, likely needs curation.
 5. No on-screen settings UI for rate/volume/photo-mode — keyboard-only,
-   undocumented in the app itself.
+   undocumented in the app itself (see mobile note under voice answers).
 6. Real per-bird-species token art doesn't exist yet — swap is a one-column
    `image_path` update in the `tokens` table (see `backend/src/db.js`), no
    schema change needed when art shows up.
+7. Image license not verified: iNat sounds are filtered to explicitly-
+   licensed, but Wikipedia `pageimages` thumbnails are used without checking
+   their license. Almost always freely-licensed Commons images, but to be
+   airtight, add a Commons `imageinfo` license check to `findImage`.
 7. Not yet added to the nightly Google Drive backup routine — low priority
    while all data is placeholder/test data.
 
